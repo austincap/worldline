@@ -48,8 +48,40 @@ io.on('connection', function(socket) {
   // });
 
   socket.on('retrieveDatabase', function(){
-    retrievePostsForNetView(socket);
+    retrievePosts(socket);
   });
 });
+
+
+function retrievePosts(socket){
+	var topPosts = [];
+    var topPostQuery = `
+    MATCH (p:Post)
+    WITH p ORDER BY p.upvotes-p.downvotes DESC
+    OPTIONAL MATCH (p)-[ta:TAGGEDAS]->(t:Tag)
+    OPTIONAL MATCH (:Post)-[rt:REPLYTO]->(p)
+    RETURN p AS posts, COLLECT(DISTINCT [t.name, ta.upvotes]) AS tags, COUNT(DISTINCT rt) AS replies`;
+    //SKIP `+String(PAGESIZE*pagenum)+` LIMIT `+String(PAGESIZE);
+    //`;
+
+    session
+      .run(topPostQuery)
+      .then(function(result){
+        var dataForClient = [];
+        result.records.forEach(function(record){
+          var processedPostObject = record["_fields"][0]["properties"];
+          record["_fields"][1].forEach(function(tagAndVote){
+            processedPostObject.tagnames = tagAndVote[0];
+            processedPostObject.tagvotes = tagAndVote[1];
+          });
+          processedPostObject.replycount = record["_fields"][2];
+          dataForClient.push(processedPostObject);
+          socket.emit('receivedPostData', topPosts);
+        });
+      })
+      .catch(function(error){
+        console.log(error);
+      });
+}
 
 httpServer.listen(3000,function(){console.log('Meme War app listeningn on port 3000 like a prude!');});
